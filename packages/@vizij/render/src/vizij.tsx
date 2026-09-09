@@ -15,6 +15,15 @@ import type { VizijActions, VizijData } from "./store-types";
 import type { Group } from "./types";
 import { SelectionGlowEffect } from "./effects/selection-glow-effect";
 
+/*
+ * Uniformly scale the entire rendered model.
+ *
+ * IMPORTANT:
+ * Do NOT apply this value to rootBounds/camera fitting.
+ * Otherwise the orthographic camera compensates for the scale
+ * and the model appears the same size on screen.
+ */
+
 type RootBounds = NonNullable<Group["rootBounds"]>;
 
 Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -26,6 +35,7 @@ export interface VizijProps {
   namespace?: string;
   showSafeArea?: boolean;
   showSelectionGlow?: boolean;
+  modelScale?: number;
   onPointerMissed?: ComponentProps<typeof Canvas>["onPointerMissed"];
 }
 
@@ -34,7 +44,7 @@ export interface VizijProps {
  *
  * @param style - The style object for the Vizij component.
  *
- * @param className - The CSS class name for the Vizij component
+ * @param className - The class name for the Vizij component
  *
  * @param rootId - The root identifier for the Vizij component.
  *
@@ -52,38 +62,44 @@ export function Vizij({
   showSafeArea = false,
   showSelectionGlow = false,
   onPointerMissed,
+  modelScale = 1,
 }: VizijProps): ReactNode {
   const ctx = useContext(VizijContext);
 
   useEffect(() => {
     recordRenderCounter("canvasMountCount");
     recordRenderCounter("mountedCanvasCount");
+
     return () => {
       recordRenderCounter("mountedCanvasCount", -1);
     };
   }, []);
 
-  if (ctx) {
-    return (
-      <Canvas
-        shadows={false}
-        style={style}
-        className={className}
-        onPointerMissed={onPointerMissed}
-        gl={{
-          outputColorSpace: SRGBColorSpace,
-          toneMapping: NoToneMapping,
-          antialias: true,
-        }}
-      >
-        <MemoizedInnerVizij
-          rootId={rootId}
-          namespace={namespace}
-          showSafeArea={showSafeArea}
-          showSelectionGlow={showSelectionGlow}
-        />
-      </Canvas>
-    );
+
+if (ctx) {
+  return (
+    <Canvas
+      shadows={false}
+      style={style}
+      className={className}
+      onPointerMissed={onPointerMissed}
+      gl={{
+        alpha: true,
+        outputColorSpace: SRGBColorSpace,
+        toneMapping: NoToneMapping,
+        antialias: true,
+      }}
+    >
+      <MemoizedInnerVizij
+        rootId={rootId}
+        namespace={namespace}
+        showSafeArea={showSafeArea}
+        showSelectionGlow={showSelectionGlow}
+        modelScale={modelScale}
+      />
+    </Canvas>
+  );
+
   } else {
     return (
       <VizijContext.Provider value={useDefaultVizijStore}>
@@ -102,6 +118,7 @@ export function Vizij({
             namespace={namespace}
             showSafeArea={showSafeArea}
             showSelectionGlow={showSelectionGlow}
+            modelScale={modelScale}
           />
         </Canvas>
       </VizijContext.Provider>
@@ -119,6 +136,7 @@ export interface InnerVizijProps {
   };
   showSafeArea?: boolean;
   showSelectionGlow?: boolean;
+  modelScale?: number;
 }
 
 export function InnerVizij({
@@ -127,6 +145,7 @@ export function InnerVizij({
   container,
   showSafeArea,
   showSelectionGlow,
+  modelScale = 1,
 }: InnerVizijProps) {
   const sceneParentSizing: { width: number; height: number } | undefined =
     container
@@ -139,21 +158,25 @@ export function InnerVizij({
   return (
     <>
       <ambientLight intensity={Math.PI / 2} />
-      {/* <color attach="background" args={["white"]} /> */}
+
       <OrthographicCamera
         makeDefault
         position={[0, 0, 100]}
         near={0.1}
         far={1000}
       />
+
       <Suspense fallback={null}>
         <World
           rootId={rootId}
           namespace={namespace}
           parentSizing={sceneParentSizing}
+          modelScale={modelScale}
         />
       </Suspense>
+
       {showSelectionGlow && <SelectionGlowEffect enabled />}
+
       {showSafeArea && <SafeAreaRenderer rootId={rootId} />}
     </>
   );
@@ -163,24 +186,28 @@ const MemoizedInnerVizij = memo(InnerVizij);
 
 /**
  * Renders the inner world of the scene.
- * This includes the items in the scene, other than general lighting, the grid, and background.
- * For each namespace, renders the tree as a renderable component.
  *
- * @returns The JSX element representing the inner world.
+ * The entire Vizij model is wrapped in a uniformly scaled
+ * Three.js group. Camera fitting deliberately uses the
+ * ORIGINAL root bounds so that the camera does not cancel
+ * the visual enlargement.
  */
 function InnerWorld({
   rootId,
   namespace = "default",
   parentSizing,
+  modelScale = 1,
 }: {
   rootId: string;
   namespace?: string;
   parentSizing?: { width: number; height: number };
+  modelScale?: number;
 }) {
   const [present, rootBounds] = useVizijStore(
     useShallow((state: VizijData & VizijActions) => {
       const group = state.world[rootId] as Group | undefined;
       const bounds: RootBounds = group?.rootBounds ?? defaultRootBounds;
+
       return [group !== undefined, bounds] as [boolean, RootBounds];
     }),
   );
@@ -191,8 +218,18 @@ function InnerWorld({
   }));
 
   useEffect(() => {
+    /*
+     * IMPORTANT:
+     *
+     * rootBounds are intentionally NOT multiplied by MODEL_SCALE here.
+     *
+     * The model itself is scaled below, while the camera continues
+     * to use the original bounds. This makes the model appear larger
+     * on screen instead of the camera compensating for the scale.
+     */
     const width = rootBounds.size.x;
     const height = rootBounds.size.y;
+
     if (
       camera &&
       parentSizing === undefined &&
@@ -200,11 +237,16 @@ function InnerWorld({
     ) {
       const zoom = Math.min(size.width / width, size.height / height);
       const center = rootBounds.center;
-      if (camera.zoom !== zoom) {
-        camera.zoom = zoom;
+
+      if (camera.zoom !== zoom * modelScale) {
+        camera.zoom = zoom * modelScale;
         camera.updateProjectionMatrix();
       }
-      if (camera.position.x !== center.x || camera.position.y !== center.y) {
+
+      if (
+        camera.position.x !== center.x ||
+        camera.position.y !== center.y
+      ) {
         camera.position.x = center.x;
         camera.position.y = center.y;
         camera.updateProjectionMatrix();
@@ -218,23 +260,36 @@ function InnerWorld({
         parentSizing.width / width,
         parentSizing.height / height,
       );
+
       const center = rootBounds.center;
 
       (camera as OrthographicCameraType).left =
         (-0.5 * parentSizing.width) / zoom + center.x;
+
       (camera as OrthographicCameraType).right =
         (0.5 * parentSizing.width) / zoom + center.x;
+
       (camera as OrthographicCameraType).top =
         (0.5 * parentSizing.height) / zoom + center.y;
+
       (camera as OrthographicCameraType).bottom =
         (-0.5 * parentSizing.height) / zoom + center.y;
+
       (camera as OrthographicCameraType).updateProjectionMatrix();
     }
-  }, [rootBounds, camera, parentSizing, size]);
+  }, [rootBounds, camera, parentSizing, size, modelScale]);
 
-  return (
-    <ErrorBoundary fallback={null}>
-      {present && <Renderable id={rootId} namespace={namespace} chain={[]} />}
+return (
+  <ErrorBoundary fallback={null}>
+    {present && (
+      <group
+        scale={modelScale}
+        ref={(node) => {
+        }}
+      >
+        <Renderable id={rootId} namespace={namespace} chain={[]} />
+      </group>
+    )}
       {!present && (
         <Text
           position={[0, 0, 0]}
@@ -255,6 +310,7 @@ const World = memo(InnerWorld);
 function SafeAreaRenderer({ rootId }: { rootId: string }) {
   const rootBounds = useVizijStore((state: VizijData & VizijActions) => {
     const group = state.world[rootId] as Group | undefined;
+
     return (group?.rootBounds ?? defaultRootBounds) as RootBounds;
   });
 
@@ -263,7 +319,6 @@ function SafeAreaRenderer({ rootId }: { rootId: string }) {
   const top = rootBounds.center.y + rootBounds.size.y / 2;
   const bottom = rootBounds.center.y - rootBounds.size.y / 2;
 
-  // Render a line for the bounds
   return (
     <Line
       points={[
