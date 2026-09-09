@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "dev:demo-animation-studio": "pnpm --filter demo-animation-studio run dev",
+    "dev:demo-ros4hri-face": "pnpm --filter demo-ros4hri-face run dev",
     "dev:demo-graph-studio": "pnpm --filter demo-graph-studio run dev",
     "dev:vizij-authoring": "pnpm --filter vizij-authoring run dev",
     "dev:vizij-showcase": "pnpm --filter vizij-showcase run dev",
