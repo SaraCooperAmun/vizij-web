@@ -21,11 +21,7 @@ import "./styles.css";
  * --------------------------------------------------------------------------
  */
 
-const faceAssetUrl = new URL(
-  "../../demo-ros4hri/public/assets/emy.glb",
-  import.meta.url,
-).href;
-
+const faceAssetUrl = `/assets/${import.meta.env.VITE_FACE_ASSET}`;
 
 const assetBundle: VizijAssetBundle = {
   namespace: "demo-ros4hri-face",

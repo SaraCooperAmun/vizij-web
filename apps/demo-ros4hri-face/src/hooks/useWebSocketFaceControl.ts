@@ -91,7 +91,7 @@ type Options = {
 
 const WS_URL =
   import.meta.env.VITE_FACE_WS_URL ??
-  "ws://192.168.50.201:9001";
+  "ws://localhost:9001";
 
 function clamp(
   value: number,
