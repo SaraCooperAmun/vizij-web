@@ -300,6 +300,73 @@ pnpm run dev:demo-ros4hri-face --host
 
 Vite environment variables are read when the development server starts, so restart Vite after changing them.
 
+## Starting the face with Tauri
+
+Tauri can also be used to run the ROS4HRI face in a native application window instead of opening it in Firefox.
+
+The Tauri configuration is located in:
+
+```bash
+apps/demo-ros4hri-face/src-tauri/
+```
+
+Tauri uses the same Vite application and does not require a separate frontend.
+
+Development mode
+
+From the demo-ros4hri-face directory:
+
+```bash
+cd ~/vizij_project/vizij-web/apps/demo-ros4hri-face
+```
+
+Run:
+
+```bash
+pnpm tauri dev
+```
+
+This starts the Vite development server and opens the face inside a Tauri window.
+
+
+The Tauri application can then be built with:
+
+```bash
+pnpm tauri build
+```
+
+The generated application packages are placed in the Tauri build output directory.
+
+Note: Tauri is currently being tested as an alternative to the Firefox-based face launcher. On Nvidia Jetson, Tauri cannot be used due to WebKit dependency. 
+
+## Adjusting the face size
+
+The size of the face can be adjusted directly in `FaceApp.tsx` using the `modelScale` property:
+
+```tsx
+<VizijRuntimeFace
+  className="face-canvas"
+  showSafeArea={false}
+  modelScale={1.5}
+/>
+```
+
+`modelScale` controls the overall size of the 3D face.
+
+For example:
+
+```tsx
+modelScale={1.0}   // smaller
+modelScale={1.5}   // current size
+modelScale={2.0}   // larger
+```
+
+Increase the value if the face appears too small on the robot display, or decrease it if the face appears too large.
+
+This value can be tuned according to the physical size of the robot's display and the desired face size.
+
+Note: this can also be passed as ROS parameter if needed. 
+
 ---
 
 # What the face can do
